@@ -1,33 +1,48 @@
+import os
 import requests
 import feedparser
+import schedule
+import time
+from dotenv import load_dotenv
 
-webhook_url = 'https://discord.com/api/webhooks/webhookid'
-    # You need to create a discord webhook on the specific channel that you want the script to use and then past that URL above.
-rss_url = 'https://feed.example.com/feed/all/'
-    # URL of the RSS feed, should support all standard RSS feed types
+# Load environment variables from .env file
+load_dotenv()
+
+# Get webhook URL and RSS feed URLs from environment variables
+webhook_url = os.getenv('WEBHOOK_URL')
+rss_urls = os.getenv('RSS_URLS').split(',')
 
 def send_to_discord(message):
     payload = {'content': message}
     requests.post(webhook_url, json=payload)
 
-def get_last_entry():
+def get_last_entry(index):
     try:
-        with open('last_posted.txt', 'r') as file:
+        with open(f'last_posted_{index}.txt', 'r') as file:
             return file.read().strip()
     except FileNotFoundError:
         return None
 
-def update_last_entry(link):
-    with open('last_posted.txt', 'w') as file:
+def update_last_entry(index, link):
+    with open(f'last_posted_{index}.txt', 'w') as file:
         file.write(link)
 
 def check_rss_feed():
-    feed = feedparser.parse(rss_url)
-    latest_entry = feed.entries[0]
-    last_posted_entry = get_last_entry()
+    for index, rss_url in enumerate(rss_urls):
+        print(index, rss_url)
+        feed = feedparser.parse(rss_url)
+        latest_entry = feed.entries[0]
+        last_posted_entry = get_last_entry(index)
 
-    if latest_entry.link != last_posted_entry:
-        send_to_discord(f"New post 📰: {latest_entry.title} - {latest_entry.link}")
-        update_last_entry(latest_entry.link)
+        if latest_entry.link != last_posted_entry:
+            # Extracting title from the summary attribute
+            title = latest_entry.summary.split('<p>')[1].split('</p>')[0]
+            send_to_discord(f"New post 📰: {title} - {latest_entry.link}")
+            update_last_entry(index, latest_entry.link)
 
 check_rss_feed()
+schedule.every(15).minutes.do(check_rss_feed)
+
+while True:
+    schedule.run_pending()
+    time.sleep(1)
